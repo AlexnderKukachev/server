@@ -1,42 +1,58 @@
-import aiohttp
-import asyncio
 from datetime import datetime
 from time import sleep
 from threading import Thread
-from requests import get
+import socket
 
 from config import BALANCER_URL, URLS
 
-task_num = 0
+
+def send(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host, port))
+        s.send('task'.encode())
+        while 1:
+            sleep(0.001)
+            try:
+                request = s.recv(4096)
+            except OSError:
+                continue
+            if request:
+                s.close()
+                print(request.decode())
 
 
 # Функция - спамер
-async def main():
-    global task_num
-    async with aiohttp.ClientSession() as session:
-        async with session.get(BALANCER_URL) as resp:
-            print(datetime.now(), f'task_{task_num} started')
-            text, status = await resp.text(), resp.status
-            print(datetime.now(), f'task_{task_num} complete\n'
-                                  f'message: {text}, status: {status}')
-    sleep(0.2)
-    task_num += 1
+def main():
+    host, port = BALANCER_URL.split(':')
+    while 1:
+        thread = Thread(target=send, args=(host, int(port)), daemon=True)
+        thread.start()
+        sleep(0.1)
+
+
+def send_order(command):
+    sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host, port = URLS[0].split(':')
+    sc.connect((host, int(port)))
+    sc.send(command.encode())
+    while 1:
+        sleep(0.001)
+        request = sc.recv(4096)
+        if request:
+            sc.close()
+            print(request)
+            break
 
 
 # Запускается в отдельном потоке, чтобы имитировать отключение одного из клиентов
 def target_switch():
-    sleep(10)
-    response = get(f'{URLS[0]}stop/')
-    print(response.text)
-    sleep(10)
-    response = get(f'{URLS[0]}start/')
-    print(response.text)
+    sleep(100)
+    send_order('shutdown')
+    sleep(100)
+    send_order('startup')
 
 
 if __name__ == '__main__':
     thread = Thread(target=target_switch, daemon=True)
     thread.start()
-    loop = asyncio.get_event_loop()
-    tasks = [loop.create_task(main()) for _ in range(1000)]
-    wait_tasks = asyncio.wait(tasks)
-    loop.run_until_complete(wait_tasks)
+    main()

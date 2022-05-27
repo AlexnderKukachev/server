@@ -1,51 +1,85 @@
-import aiohttp
-from requests import get
+import socket
+import time
 
 
 class Target:
 
-    def __init__(self, ip: str = None, port: str = None, name=None):
-        self.available = False
-        self.ip = ip,
+    def __init__(self, host: str = None, port: int = None, name=None):
+        self.host = host,
         self.port = port,
         self.tasks_num = 0
+        self.tasks = []
         self.name = name
-        self.tasks_in_work = []
 
     def __repr__(self):
         return self.name
 
-    def is_available(self):
-        url = f'http://{self.ip[0]}:{self.port[0]}/api/is_alive/'
-        self.available = get(url).json()
-        return self.available
+    def __del__(self):
+        self.sc.close()
 
-    def __add_task(self, task):
+    # def available(self):
+    #     sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #     sc.connect((self.host[0], self.port[0]))
+    #     sc.send('ping')
+    #     sc.close()
+    #     with
+
+    def __add_task(self, data):
         self.tasks_num += 1
-        self.tasks_in_work.append(task)
+        self.tasks.append(data)
 
-    def __sub_task(self, task):
+    def sub_task(self, data):
         self.tasks_num -= 1
-        self.tasks_in_work.remove(task)
+        self.tasks.remove(data)
 
-    async def send_task(self, task_num, method, headers, json, cookies):
-        task = f'task_{task_num}'
-        self.__add_task(task)
-        url = f'/api/task/{task_num}'
-        async with aiohttp.ClientSession(f'http://{self.ip[0]}:{self.port[0]}') as session:
-            async with session.request(method=method, url=url, headers=headers, cookies=cookies, json=json) as resp:
-                status, headers, text = resp.status, resp.headers, await resp.text()
-                try:
-                    json = await resp.json()
-                except:
-                    json = {}
-        self.__sub_task(task)
-        return status, headers, text, json
+    def try_connect(self):
+        sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sc.connect((self.host[0], self.port[0]))
+        sc.send('ping'.encode())
+        import time
+        while 1:
+            time.sleep(0.001)
+            request = sc.recv(4096).decode()
+            print(request)
+            if request == 'pong':
+                sc.close()
+                return True
+            elif request == 'Unavailable':
+                sc.close()
+                return False
 
-    def start_up(self):
-        response = get(url=f'http://{self.ip[0]}:{self.port[0]}/api/start/')
-        return response
+    def send_task(self, data):
+        self.__add_task(data)
+        sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sc.connect((self.host[0], self.port[0]))
+        sc.send(data)
+        while 1:
+            time.sleep(0.001)
+            request = sc.recv(4096)
+            if request:
+                print(request)
+                sc.close()
+                self.sub_task(data)
+                return request
+
+    def startup(self):
+        sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sc.connect((self.host[0], self.port[0]))
+        sc.send('startup'.encode())
+        while 1:
+            time.sleep(0.001)
+            request = sc.recv(4096)
+            if request:
+                sc.close()
+                return request
 
     def shutdown(self):
-        response = get(url=f'http://{self.ip[0]}:{self.port[0]}/api/stop/')
-        return response
+        sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sc.connect((self.host[0], self.port[0]))
+        sc.send('shutdown'.encode())
+        while 1:
+            time.sleep(0.001)
+            request = sc.recv(4096)
+            if request:
+                sc.close()
+                return request
